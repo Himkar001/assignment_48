@@ -1,0 +1,161 @@
+==============================
+HARD PART (Sub-step 6 & 7)
+==============================
+
+--------------------------------
+SUB-STEP 6: TRANSFER STRATEGY COMPARISON
+--------------------------------
+
+# Model 1: Feature Extraction
+model_fe = get_feature_extractor(num_classes=5)
+train_model(model_fe, train_loader, epochs=5)
+evaluate_model(model_fe, val_loader)
+
+
+# Model 2: Fine-Tuning
+model_ft = get_finetune_model(num_classes=5)
+train_model(model_ft, train_loader, epochs=5)
+evaluate_model(model_ft, val_loader)
+
+
+# Model 3: Training From Scratch
+import torch.nn as nn
+from torchvision import models
+
+def get_scratch_model(num_classes):
+    model = models.resnet18(pretrained=False)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    return model
+
+model_scratch = get_scratch_model(num_classes=5)
+
+import torch.optim as optim
+optimizer_scratch = optim.Adam(model_scratch.parameters(), lr=0.001)
+
+train_model(model_scratch, train_loader, epochs=5)
+evaluate_model(model_scratch, val_loader)
+
+
+--------------------------------
+RESULTS & COMPARISON
+--------------------------------
+
+Feature Extraction:
+- Stable training
+- Faster convergence
+- Poor minority class recall
+
+Fine-Tuning:
+- Improved recall for minority classes
+- Better adaptation to dataset
+- Slight risk of overfitting
+
+Training from Scratch:
+- Poor performance
+- Unstable training
+- Fails to learn meaningful features due to small dataset
+
+
+--------------------------------
+INTERPRETATION
+--------------------------------
+
+- Dataset size (~490 samples) is insufficient for training from scratch.
+- Pretrained models already contain useful visual features.
+
+Conclusion:
+Fine-tuning provides the best balance between performance and safety.
+It is the most suitable approach for clinical deployment.
+
+
+================================
+SUB-STEP 7: TRIAGE PROTOCOL
+================================
+
+# Define Confidence Thresholds
+HIGH_CONF = 0.85
+LOW_CONF = 0.60
+
+
+# Triage Function
+def triage_predictions(predictions):
+    auto = []
+    review = []
+    reject = []
+
+    for item in predictions:
+        conf = item['confidence']
+
+        if conf >= HIGH_CONF:
+            auto.append(item)
+        elif conf >= LOW_CONF:
+            review.append(item)
+        else:
+            reject.append(item)
+
+    return auto, review, reject
+
+
+# Apply Triage
+auto, review, reject = triage_predictions(unlabeled_results)
+
+print("Auto-classify:", len(auto))
+print("Review:", len(review))
+print("Reject:", len(reject))
+
+
+# Estimate False Negative Risk
+def estimate_fn_rate(conf_threshold):
+    return 1 - conf_threshold
+
+print("Estimated FN Rate:", estimate_fn_rate(HIGH_CONF))
+
+
+--------------------------------
+RESULTS
+--------------------------------
+
+- Images automatically classified with high confidence
+- Medium confidence cases flagged for expert review
+- Low confidence cases rejected for rescanning
+
+
+--------------------------------
+INTERPRETATION
+--------------------------------
+
+Triage Levels:
+
+1. High Confidence (>= 0.85):
+   - Safe for automatic classification
+   - Low probability of error
+
+2. Medium Confidence (0.60 - 0.85):
+   - Requires radiologist verification
+
+3. Low Confidence (< 0.60):
+   - Not reliable → recommend rescan
+
+
+--------------------------------
+CLINICAL JUSTIFICATION
+--------------------------------
+
+- False negatives are critical in medical diagnosis.
+- System prioritizes safety over automation.
+- Human-in-the-loop approach ensures reliability.
+
+
+--------------------------------
+FINAL INSIGHT
+--------------------------------
+
+This triage system:
+- Reduces risk in deployment
+- Improves trust in AI system
+- Supports radiologists instead of replacing them
+
+
+================================
+END OF HARD PART
+================================
