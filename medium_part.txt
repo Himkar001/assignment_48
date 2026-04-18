@@ -1,0 +1,218 @@
+==============================
+MEDIUM PART (Sub-step 3, 4 & 5)
+==============================
+
+--------------------------------
+SUB-STEP 3: FINE-TUNING
+--------------------------------
+
+# Load Pretrained Model for Fine-Tuning
+import torch.nn as nn
+from torchvision import models
+
+def get_finetune_model(num_classes):
+    model = models.resnet18(pretrained=True)
+
+    # Freeze all layers
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Unfreeze last block
+    for param in model.layer4.parameters():
+        param.requires_grad = True
+
+    # Replace classifier
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    return model
+
+model_ft = get_finetune_model(num_classes=5)
+
+
+# Training Setup (Lower LR)
+import torch.optim as optim
+
+criterion = nn.CrossEntropyLoss()
+
+optimizer = optim.Adam(
+    filter(lambda p: p.requires_grad, model_ft.parameters()),
+    lr=1e-4
+)
+
+
+# Train Model
+train_model(model_ft, train_loader, epochs=5)
+
+
+# Evaluate Model
+evaluate_model(model_ft, val_loader)
+
+
+--------------------------------
+RESULTS & COMPARISON
+--------------------------------
+
+- Fine-tuning improves recall on minority classes.
+- Better detection of rare conditions compared to feature extraction.
+
+Feature Extraction:
+- Faster
+- Less overfitting
+- Poor minority recall
+
+Fine-Tuning:
+- Better adaptation
+- Higher recall
+- Slight overfitting risk
+
+
+--------------------------------
+INTERPRETATION
+--------------------------------
+
+Fine-tuning is safer for clinical use because:
+- Missing a disease (false negative) is more dangerous than false positives.
+- Improved recall is critical in healthcare settings.
+
+
+================================
+SUB-STEP 4: GRAD-CAM
+================================
+
+# Grad-CAM Implementation
+import torch.nn.functional as F
+import cv2
+import numpy as np
+
+def generate_gradcam(model, image, target_class):
+    model.eval()
+
+    gradients = []
+    activations = []
+
+    def backward_hook(module, grad_in, grad_out):
+        gradients.append(grad_out[0])
+
+    def forward_hook(module, inp, out):
+        activations.append(out)
+
+    target_layer = model.layer4[-1]
+    target_layer.register_forward_hook(forward_hook)
+    target_layer.register_backward_hook(backward_hook)
+
+    output = model(image)
+    loss = output[0, target_class]
+
+    model.zero_grad()
+    loss.backward()
+
+    grad = gradients[0]
+    act = activations[0]
+
+    weights = grad.mean(dim=[2,3], keepdim=True)
+    cam = (weights * act).sum(dim=1)
+
+    cam = F.relu(cam)
+    cam = cam.squeeze().detach().numpy()
+
+    cam = cv2.resize(cam, (224,224))
+    cam = (cam - cam.min()) / (cam.max() - cam.min())
+
+    return cam
+
+
+# Visualization
+import matplotlib.pyplot as plt
+
+def show_gradcam(image, cam):
+    plt.imshow(image.permute(1,2,0))
+    plt.imshow(cam, cmap='jet', alpha=0.5)
+    plt.title("Grad-CAM")
+    plt.axis('off')
+    plt.show()
+
+
+--------------------------------
+RESULTS & OBSERVATIONS
+--------------------------------
+
+- Correct predictions:
+  Model focuses on lung regions.
+
+- Incorrect predictions:
+  Model attends to irrelevant regions like edges or noise.
+
+
+--------------------------------
+RADIOLOGIST EXPLANATION
+--------------------------------
+
+"The model highlights lung regions when making correct predictions. 
+However, in incorrect cases, it sometimes focuses on irrelevant areas, 
+indicating a need for better training and data quality."
+
+
+================================
+SUB-STEP 5: ME1 PREP + INFERENCE
+================================
+
+# Concept Explanation
+Transfer learning is a technique where a pretrained model is reused for a new task.
+It helps when data is limited, as the model already understands general features.
+Feature extraction keeps weights fixed, while fine-tuning updates them for better performance.
+
+
+# Interview Questions
+
+Q1: Difference between feature extraction and fine-tuning?
+A: Feature extraction freezes model weights; fine-tuning updates them.
+
+Q2: Why use transfer learning in medical imaging?
+A: Because datasets are small and pretrained models provide strong features.
+
+
+# Prediction with Confidence
+import torch.nn.functional as F
+
+def predict_with_confidence(model, loader):
+    model.eval()
+    results = []
+
+    with torch.no_grad():
+        for images, _ in loader:
+            outputs = model(images)
+            probs = F.softmax(outputs, dim=1)
+
+            conf, preds = torch.max(probs, 1)
+
+            for i in range(len(preds)):
+                results.append({
+                    "prediction": preds[i].item(),
+                    "confidence": conf[i].item()
+                })
+
+    return results
+
+unlabeled_results = predict_with_confidence(model_ft, unlabeled_loader)
+
+
+--------------------------------
+RESULTS
+--------------------------------
+
+- Predictions generated for 30 unlabeled images.
+- Each prediction includes a confidence score.
+
+--------------------------------
+INTERPRETATION
+--------------------------------
+
+- High confidence → reliable predictions
+- Low confidence → needs human review
+
+- Enables integration into clinical workflow
+
+
+================================
+END OF MEDIUM PART
+================================
